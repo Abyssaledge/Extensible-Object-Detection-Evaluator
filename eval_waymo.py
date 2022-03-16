@@ -1,5 +1,5 @@
 # evaluate the waymo xx.bin files in COCO-like protocal
-from uni_evaluator.eval import Evaluator
+from evaluator.eval import Evaluator
 import argparse
 
 parser = argparse.ArgumentParser()
@@ -19,11 +19,15 @@ if __name__ == '__main__':
     # pd_path = ''
     gt_path = args.gt_path 
 
-    from uni_evaluator.params import WaymoLengthParam
-    update = {'type':('Vehicle',)}
+    from evaluator.params import WaymoBaseParam, WaymoLengthParam
+    # update = {'type':('Vehicle', 'Ped')}
+    update_sep = {'type':('Pedestrian',)}
+    # update_sep = None
 
-    params = WaymoLengthParam(pd_path, gt_path, [None, [0, 4], [4, 8], [8, 20]], interval=args.interval, update_sep=update)
+    params = WaymoLengthParam(pd_path, gt_path, [None, [0, 4], [4, 8], [8, 20]], interval=args.interval, update_sep=update_sep)
+    # params = WaymoBaseParam(pd_path, gt_path, [None, [0, 4], [4, 8], [8, 20]], interval=args.interval, update_sep=update)
     params.save_suffix = args.save_suffix
+    params.iouThrs = [0.05,]
 
     # params.save_folder = '/mnt/truenas/scratch/lve.fan/UniDetEval/results'
 

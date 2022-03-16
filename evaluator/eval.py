@@ -1,7 +1,6 @@
 import numpy as np
 import numba
 import copy
-import time
 import tqdm
 from collections import defaultdict
 import datetime
@@ -83,6 +82,10 @@ class Evaluator(object):
         recall      = -np.ones([T,]   + breakdown_dims)
         scores      = -np.ones([T, R] + breakdown_dims)
 
+        fppi        = -np.ones([T, R] + breakdown_dims)
+        box_ious     = -np.ones([T,]   + breakdown_dims)
+        box_errors  = -np.ones([T,]   + breakdown_dims + [self.box_dim,])
+
         eval_results_per_choice = self.split_eval_results_by_breakdowns(eval_result_list)
 
         for choice_idx in tqdm.tqdm(eval_results_per_choice):
@@ -91,7 +94,8 @@ class Evaluator(object):
             choice = self.idx_to_choice[choice_idx][-1] # e.g., {'size':0, 'range':2}
             choice_list = [choice[k] for k in self.breakdown_name_list] # for index
 
-            assert len(E) > 0
+            num_images = len(E)
+            assert num_images > 0
             # if len(E) == 0:
             #     continue
             dtScores = np.concatenate([e['pd_score'] for e in E])
@@ -105,16 +109,27 @@ class Evaluator(object):
             pd_ignore = np.concatenate([e['pd_ignore'] for e in E], axis=1)[:,sort_inds]
             gt_ignore = np.concatenate([e['gt_ignore'] for e in E])
 
+            this_ious  = np.concatenate([e['pd_matched_iou']  for e in E], axis=1)[:,sort_inds]
+            pd_matched_gts  = np.concatenate([e['pd_matched_gt']  for e in E], axis=1)[:, sort_inds, :]
+            pds = np.concatenate([e['pd_boxes']  for e in E], axis=0)[sort_inds, :]
+            this_errors = np.abs(pds[None,...] - pd_matched_gts) # [num_thr, num_pds, box_dim]
+
             assert gt_ignore.dtype == np.bool and pd_ignore.dtype == np.bool
             num_non_ig_gt = (~gt_ignore).sum()
             if num_non_ig_gt == 0:
                 continue
 
-            tps = (~pd_ignore) & (pd_match > 0)
-            fps = (~pd_ignore) & (pd_match == 0)
+            tps = (~pd_ignore) & (pd_match > -1)
+            fps = (~pd_ignore) & (pd_match == -1)
 
-            tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
-            fp_sum = np.cumsum(fps, axis=1).astype(dtype=np.float)
+            # only calculate tps errors
+            this_ious = this_ious.astype(np.double) * tps.astype(np.double)
+            this_errors = this_errors.astype(np.double) * tps.astype(np.double)[..., None]
+            this_ious_sum = np.cumsum(this_ious, axis=1)
+            this_errors_sum = np.cumsum(this_errors, axis=1)
+
+            tp_sum = np.cumsum(tps, axis=1).astype(np.float)
+            fp_sum = np.cumsum(fps, axis=1).astype(np.float)
 
             # loop each iouthrs
             num_iou_thrs = len(self.params.iouThrs)
@@ -130,7 +145,14 @@ class Evaluator(object):
                 indices = tuple([t,] + choice_list) # a[(1,2,3)] is equivalent to a[1,2,3]
                 if nd:
                     recall[indices] = rc[-1]
+
+                    ious_mean = this_ious_sum[t, ...] / (tp + np.spacing(1))
+                    box_ious[indices] = ious_mean[-1]
+
+                    errors_mean = this_errors_sum[t, ...] / (tp[:, None] + np.spacing(1))
+                    box_errors[indices] = errors_mean[-1]
                 else:
+                    print(f'****** nd is {nd} ******')
                     recall[indices] = 0
 
                 pr = pr.tolist()
@@ -159,6 +181,8 @@ class Evaluator(object):
             'precision': precision,
             'recall':   recall,
             'scores': scores,
+            'box_ious': box_ious,
+            'box_errors': box_errors,
         }
         return accumulated_result
 
@@ -218,6 +242,8 @@ class Evaluator(object):
 
 
         for i in range(len(p.iouThrs) + 1):
+            if i == len(p.iouThrs) == 1:
+                break
             iou_thr = p.iouThrs[i] if i < len(p.iouThrs) else None
             for i in range(self.num_all_choices):
                 _summarize(i, iou_thr, ap=1)
@@ -227,23 +253,27 @@ class Evaluator(object):
     def summarize_as_tree(self, accumulated_result):
         print('Summarizing ...')
         p = self.params
+        metric_set = ['Precision', 'Recall', 'TP_IoU', 'TP_Error']
         from treelib import Tree
         summary = Tree()
         summary.create_node('Results', 'root')
         summary.create_node('Precision', 'Precision', parent='root')
         summary.create_node('Recall', 'Recall', parent='root')
+        summary.create_node('TP_IoU', 'TP_IoU', parent='root')
+        summary.create_node('TP_Error', 'TP_Error', parent='root')
         # summary = {'Precision':{}, 'Recall':{}}
-        def _summarize(choice_idx, iouThr=None, ap=1):
+        def _summarize(choice_idx, metric, iouThr=None):
+            assert metric in metric_set
             _, _, choice =  self.idx_to_choice[choice_idx]
             choice_list = [choice[k] for k in self.breakdown_name_list] # for index
-            par = 'Precision' if ap == 1 else 'Recall'
+            par = metric
             thr_name = f"IoU@{'Overall' if iouThr is None else iouThr}"
             iden = par + thr_name
             if iden not in summary:
                 summary.create_node(thr_name, iden, parent=par)
             par = iden
 
-            if ap == 1:
+            if metric == 'Precision':
                 s = accumulated_result['precision']
                 # IoU
                 if iouThr is not None:
@@ -253,8 +283,12 @@ class Evaluator(object):
                 for i in choice_list:
                     s = s[:, :, i]
                 assert s.ndim == 2 # only left dimensions of iouThrs and recall
+                if len(s[s > -1]) == 0:
+                    mean_s = None
+                else:
+                    mean_s = '{:.4f}'.format(np.mean(s[s > -1]).item() * 100)
 
-            else:
+            elif metric == 'Recall':
                 s = accumulated_result['recall']
                 if iouThr is not None:
                     t = p.iouThrs.index(iouThr)
@@ -263,22 +297,58 @@ class Evaluator(object):
                     s = s[:, i]
                 assert s.ndim == 1
 
-            if len(s[s > -1])==0:
-                mean_s = np.array([-1]).item()
+                if len(s[s > -1]) == 0:
+                    mean_s = None
+                else:
+                    mean_s = '{:.4f}'.format(np.mean(s[s > -1]).item() * 100)
+
+            elif metric == 'TP_IoU':
+                s = accumulated_result['box_ious']
+                if iouThr is not None:
+                    t = p.iouThrs.index(iouThr)
+                    s = s[[t,]]
+                for i in choice_list:
+                    s = s[:, i]
+                assert s.ndim == 1
+                if len(s[s > -1]) == 0:
+                    mean_s = None
+                else:
+                    mean_s = '{:.4f}'.format(np.mean(s[s > -1]).item())
+
+            elif metric == 'TP_Error':
+                s = accumulated_result['box_errors']
+                if iouThr is not None:
+                    t = p.iouThrs.index(iouThr)
+                    s = s[[t,]]
+                for i in choice_list:
+                    s = s[:, i]
+                assert s.ndim == 2
+
+                if len(s[s > -1]) == 0:
+                    mean_s = None
+                else:
+                    s = s.mean(0).reshape(-1).tolist()
+                    assert len(s) == self.box_dim
+                    mean_s = '['
+                    for i in range(len(s)):
+                        mean_s += '{:.4f}, '.format(s[i])
+                    mean_s += ']'
+            
             else:
-                mean_s = np.mean(s[s > -1]).item() * 100
+                raise NotImplementedError
+
             
             # similar to DFS
             for i, name in enumerate(self.breakdown_name_list):
                 value = str(self.all_breakdown_dict[name][choice[name]])
                 this_key = f'{name}_{value}'
                 if 'None' in this_key:
-                    this_key = this_key.replace('None', 'Overall')
+                    this_key = this_key.replace('None', 'OVERALL')
                 iden = par + this_key
                 if iden not in summary:
                     if i == len(self.breakdown_name_list) - 1:
-                        if mean_s != -1:
-                            summary.create_node(this_key + ': ' + '{:.6f}'.format(mean_s), iden, parent=par)
+                        if mean_s is not None:
+                            summary.create_node(this_key + ': ' + mean_s, iden, parent=par)
                     else:
                         summary.create_node(this_key, iden, parent=par)
                         par = iden
@@ -288,10 +358,16 @@ class Evaluator(object):
 
         for i in range(len(p.iouThrs) + 1):
             iou_thr = p.iouThrs[i] if i < len(p.iouThrs) else None
+            if i == len(p.iouThrs) == 1:
+                break
             for i in range(self.num_all_choices):
-                _summarize(i, iou_thr, ap=1)
-            for i in range(self.num_all_choices):
-                _summarize(i, iou_thr, ap=0)
+                _summarize(i, 'Precision', iou_thr)
+            # for i in range(self.num_all_choices):
+                _summarize(i, 'Recall', iou_thr)
+            # for i in range(self.num_all_choices):
+                _summarize(i, 'TP_IoU', iou_thr)
+            # for i in range(self.num_all_choices):
+                _summarize(i, 'TP_Error', iou_thr)
 
         return summary
         
@@ -384,8 +460,13 @@ class Evaluator(object):
         # init results
         num_thrs = len(self.params.iouThrs)
         gt_match  = np.zeros((num_thrs, num_gts), dtype=np.int64)
-        pd_match  = np.zeros((num_thrs, num_pds), dtype=np.int64)
+        pd_match  = -np.ones((num_thrs, num_pds), dtype=np.int64)
         pd_ignore = np.zeros((num_thrs, num_pds), dtype=np.bool)
+
+        if not hasattr(self, 'box_dim'):
+            self.box_dim = gt_attrs['box'].shape[1]
+        pd_matched_gts  = -np.ones((num_thrs, num_pds, self.box_dim), dtype=np.float)
+        pd_matched_iou  = -np.ones((num_thrs, num_pds), dtype=np.float)
 
         # matching
         pd_ids = pd_attrs['ID']
@@ -401,6 +482,19 @@ class Evaluator(object):
             pd_match
         ) 
 
+        for i in range(num_thrs):
+
+            this_pd_match = pd_match[i]
+            pd_mask = this_pd_match > -1
+
+            if pd_mask.any():
+                pd_matched_iou[i, pd_mask] = valid_ious[pd_mask, this_pd_match[pd_mask]]
+                assert (pd_matched_iou[i, pd_mask] > self.params.iouThrs[i] - 1e-5).all()
+
+            pd_matched_gts[i, pd_mask, :] = gt_attrs['box'][this_pd_match[pd_mask]]
+        
+
+
         # Deal with those inseperable breakdowns.
         pd_ignore = self.update_pd_ignore_from_insep_breakdown(pd_match, pd_ignore, pd_attrs, insep_bd_dict)
 
@@ -414,6 +508,9 @@ class Evaluator(object):
             pd_ignore=pd_ignore,
             gt_ignore=gt_ignore,
             pd_score=pd_attrs['score'],
+            pd_matched_iou=pd_matched_iou,
+            pd_matched_gt=pd_matched_gts,
+            pd_boxes=pd_attrs['box'],
             breakdowns={**sep_bd_dict, **insep_bd_dict},
         )
 
@@ -485,7 +582,8 @@ class Evaluator(object):
             else:
                 a = pd_attr == bd_value
 
-            pd_ignore = pd_ignore | ((pd_match == 0) & a[None, :])
+            pd_ignore = pd_ignore | ((pd_match == -1) & a[None, :])
+            # pd_ignore = pd_ignore | ((pd_match == 0) & a[None, :])
 
         return pd_ignore
     
@@ -621,7 +719,9 @@ def matching(ious, iouThrs, pd_ids, gt_ids, gt_ignore, pd_ignore, gt_match, pd_m
                 continue
 
             pd_ignore[tind, pd_ind] = gt_ignore[m]
-            pd_match[tind, pd_ind]  = gt_ids[m]
+            # pd_match[tind, pd_ind]  = gt_ids[m]
+            # using m seems more useful than using gt_id
+            pd_match[tind, pd_ind]  = m
             gt_match[tind, m] = pd_ids[pd_ind]
 
     return pd_ignore, pd_match, gt_match

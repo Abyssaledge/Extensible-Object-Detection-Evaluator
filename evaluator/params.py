@@ -55,11 +55,11 @@ class WaymoBaseParam(BaseParam):
         self.inseparable_breakdowns = {}
     
     def add_iou_function(self):
-        from uni_evaluator.ious import get_waymo_iou_matrix
+        from evaluator.ious import get_waymo_iou_matrix
         self.iou_calculate_func = get_waymo_iou_matrix
 
     def add_input_function(self):
-        from uni_evaluator.utils import get_waymo_object
+        from evaluator.utils import get_waymo_object
         self.read_prediction_func = get_waymo_object
         self.read_groundtruth_func = get_waymo_object
 
