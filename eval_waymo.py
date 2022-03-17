@@ -19,7 +19,6 @@ if __name__ == '__main__':
 
     params = WaymoLengthParam(pd_path, gt_path, [None, [0, 4], [4, 8], [8, 20]], interval=args.interval, update_sep=update_sep)
     params.save_suffix = args.save_suffix
-    params.iouThrs = [0.05,]
 
     evaluator = Evaluator(params, debug=False)
     evaluator.run()
