@@ -86,7 +86,7 @@ def get_object_size(object_item):
 separable_breakdown_dict = {'type': [None, 'person', 'bus']} # None means evaluate over all categories.
 inseparable_breakdown_dict = {'size': [None, (0, 32), (32, 96), (96, 1e10)]} # None means evaluate over all sizes.
 
-separable_breakdown_func_dict = {'type': get_object_type, 'size': get_object_size}
+breakdown_func_dict = {'type': get_object_type, 'size': get_object_size}
 ```
 ---
 ## Launch evaluation
