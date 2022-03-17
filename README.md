@@ -7,7 +7,7 @@
 - Support widely-used metrics like AP, AR and customized metrics like average regression errors, average IoUs, etc. 
 - Purely based on Python, easy to develop your customized metrics.
 
-## Install
+## Installation
 - `pip install treelib`
 - Clone this repo and run `pip install .` in the cloned directory, or `pip install -e .` if you want to modify the source code.
 ---
