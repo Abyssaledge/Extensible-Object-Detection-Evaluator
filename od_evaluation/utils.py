@@ -17,52 +17,33 @@ def waymo_object_to_mmdet(obj, version, debug=False, gt=False):
     According to https://github.com/waymo-research/waymo-open-dataset/blob/master/waymo_open_dataset/label.proto#L33
     and the definition of LiDARInstance3DBoxes
     '''
-    if gt and obj.object.num_lidar_points_in_box == 0:
-        print('Encounter zero-point object')
-        return None
+    # if gt and obj.object.num_lidar_points_in_box == 0:
+    #     print('Encounter zero-point object')
+    #     return None
     box = obj.object.box
 
 
-    if version < '1.0.0':
-        heading = -box.heading - 0.5 * np.pi
+    assert version < '1.0.0', 'Only support version older than 1.0.0 for now'
+    heading = -box.heading - 0.5 * np.pi
 
     while heading < -np.pi:
         heading += 2 * np.pi
     while heading > np.pi:
         heading -= 2 * np.pi
 
-    if debug:
-        heading = 0
-    
-
-    if debug and not gt:
-        result = np.array(
-            [
-                box.center_x + box.width/2,
-                box.center_y + box.length/2,
-                box.center_z,
-                box.width,
-                box.length,
-                box.height,
-                heading,
-                obj.score,
-                float(obj.object.type),
-            ]
-        )
-    else:
-        result = np.array(
-            [
-                box.center_x,
-                box.center_y,
-                box.center_z,
-                box.width,
-                box.length,
-                box.height,
-                heading,
-                obj.score,
-                float(obj.object.type),
-            ]
-        )
+    result = np.array(
+        [
+            box.center_x,
+            box.center_y,
+            box.center_z,
+            box.width,
+            box.length,
+            box.height,
+            heading,
+            obj.score,
+            float(obj.object.type),
+        ]
+    )
     return result
 
 def get_waymo_object(file_path, debug=False, gt=False):
@@ -71,8 +52,6 @@ def get_waymo_object(file_path, debug=False, gt=False):
     print(f'Reading {file_path} ...')
     data = read_bin(file_path)
     objects = data.objects
-    # if debug and not gt:
-    #     objects = objects[:100000]
     obj_dict = defaultdict(list)
     print('Collecting Bboxes ...')
     for o in tqdm.tqdm(objects):
