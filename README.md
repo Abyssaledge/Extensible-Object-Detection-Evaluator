@@ -1,4 +1,4 @@
-# A simple and flexible object detection evaluator in COCO style
+# A simple and extensible object detection evaluator in COCO style
 
 ## Features 
 - Extensible user interfaces to deal with different data formats.
