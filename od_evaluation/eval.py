@@ -362,11 +362,8 @@ class Evaluator(object):
                 break
             for i in range(self.num_all_choices):
                 _summarize(i, 'Precision', iou_thr)
-            # for i in range(self.num_all_choices):
                 _summarize(i, 'Recall', iou_thr)
-            # for i in range(self.num_all_choices):
                 _summarize(i, 'TP_IoU', iou_thr)
-            # for i in range(self.num_all_choices):
                 _summarize(i, 'TP_Error', iou_thr)
 
         return summary
@@ -417,17 +414,6 @@ class Evaluator(object):
 
         # sanity check 
         assert len(loop_check_set) == self.num_all_choices
-    
-
-    def skip(self, sep_bd_dict, insep_bd_dict):
-        if not hasattr(self, 'skip_breakdowns'):
-            return False
-        all_bd_pair = set(sep_bd_dict.items()) | set(insep_bd_dict.items())
-        r = True
-        for pair in self.skip_breakdowns:
-            r = r and (pair in all_bd_pair)
-        return r
-
     
 
     def evaluate_single_sample_given_breakdowns(self, sep_bd_dict, insep_bd_dict, sample_id):
