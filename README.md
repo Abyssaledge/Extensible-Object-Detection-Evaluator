@@ -4,8 +4,8 @@
 - Extensible user interfaces to deal with different data formats.
 - Support customized evaluation breakdowns, e.g., object size in COCO, difficulty in KITTI, velocity and range in Waymo.
 - Interface for general matching scores, e.g. 2D IoU, 3D rotated IoU, center distance.
-- Support widely-used metric like AP, AR and customized metric like average regression errors, average IoUs, etc. 
-- Purely based on Python, easy to develop your customized metric.
+- Support widely-used metrics like AP, AR and customized metrics like average regression errors, average IoUs, etc. 
+- Purely based on Python, easy to develop your customized metrics.
 
 ## Install
 - `pip install treelib`
@@ -31,7 +31,7 @@ types = ...
 
 results[sample_id] = dict(box=boxes, score=scores, type=types)
 ```
-And you need to define a another function to read groundtruth as the same way. The items of returned dict contains at least `box` and `type`.
+And you need to define another function to read groundtruth as the same way. The items of returned dict contain at least `box` and `type`.
 
 ---
 ## Customize matching score calculator
@@ -41,8 +41,8 @@ If you are going to evaluate a 2D detector, you may want to define a 2D IoU func
 def iou_2d(box1, box2):
     # box1 in shape of [N1, 4], which is the box item defined above.
     # box2 in shape of [N2, 4], which is the box item defined above.
-
-    # return the iou matrix in shape of [N1, N2]
+    
+    iou_matrix = ... # [N1, N2]
     return iou_matrix
 ```
 You are free to define any other matching score calculators (e.g., 3D IoU), as long as keeping the same function prototype. For example:
@@ -51,7 +51,7 @@ def customized_iou_calculator(box1, box2):
     # box1 in shape of [N1, box_dim]
     # box2 in shape of [N2, box_dim]
 
-    # return the iou matrix in shape of [N1, N2]
+    iou_matrix = ... # [N1, N2]
     return iou_matrix
 ```
 
@@ -60,9 +60,9 @@ def customized_iou_calculator(box1, box2):
 ## Customize breakdowns if you like
 To correctly use customized breakdowns, here we define two kinds of breakdowns: `separable breakdowns` and `inseparable breakdowns`.
 
-`Separable breakdowns` indicates those can be used to partition prediction set and groundtruth set before the matching process. For example, `object category` is a typical separable breakdown. We usually first partition the predictions and groundtruth and only pass the predictions and groundtruth in the same category to evaluator.
+`Separable breakdowns` indicate those can be used to partition prediction set and groundtruth set before the matching process. For example, `object category` is a typical separable breakdown. We usually first partition the predictions and groundtruth and only pass the predictions and groundtruth in the same category to the evaluator.
 
-`Inseparable breakdowns` indicates those can **NOT** be simply used to partition prediction set and groundtruth set before the matching process. A typical inseparable breakdown is `object size` in COCO. We deal with those inseparable breakdowns in matching process.  
+`Inseparable breakdowns` indicate those can **NOT** be simply used to partition prediction set and groundtruth set before the matching process. A typical inseparable breakdown is `object size` in COCO. We deal with those inseparable breakdowns in the matching process.  
 
 Follow the following step to add the breakdowns you need:
 
@@ -74,9 +74,8 @@ def waymo_length_breakdown(object_item):
     return object_item['box'][:, 4] # 4th number indicates vehicle length
 ```
 ### 2. define breakdown value
-If you want add category and size breakdown in COCO:
+If you want to add category and size as breakdowns in COCO:
 ```
-
 def get_object_type(object_item):
     return object_item['type'] # 4th number indicates vehicle length
 
@@ -89,6 +88,7 @@ inseparable_breakdown_dict = {'size': [None, (0, 32), (32, 96), (96, 1e10)]} # N
 
 separable_breakdown_func_dict = {'type': get_object_type, 'size': get_object_size}
 ```
+---
 ## Launch evaluation
 ### 1. Put the pre-defined stuff into a params object
 For example in Waymo:
@@ -101,14 +101,12 @@ class WaymoBaseParam(BaseParam):
         self.iouThrs = [0.7, 0.5]
     
     def add_breakdowns(self):
-
         self.separable_breakdowns = {
             'type':('Vehicle', 'Pedestrian', 'Cyclist'), 
             'range':([0, 30], [30, 50], [50, 80], None), # None means the union of all ranges
         }
         self.inseparable_breakdowns = {'length':[(0, 4), (4, 8), (8, 20)]}
         self.breakdown_func_dict = {'range': get_waymo_object_range, 'length': get_waymo_object_length}
-
     
     def add_iou_function(self):
         self.iou_calculate_func = get_waymo_iou_matrix
@@ -128,4 +126,7 @@ e = Evaluator(params)
 e.run()
 ```
 ## Output
-We use treelib to format the evaluation results, where multiple breakdonws are nested:
+We use treelib to format the evaluation results, where multiple breakdowns are nested:
+
+![1647489465(1)](https://user-images.githubusercontent.com/21312704/158734191-343c7116-f253-4caf-ab8e-8530972d0e12.png)
+
