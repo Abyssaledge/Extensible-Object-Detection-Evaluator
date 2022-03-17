@@ -66,14 +66,14 @@ To correctly use customized breakdowns, here we define two kinds of breakdowns: 
 
 Follow the following step to add the breakdowns you need:
 
-### 1. define breakdown function
+### 1. Define breakdown function
 For example, if you want to evaluate conditioned on vehicle length in Waymo:
 ```
 def waymo_length_breakdown(object_item):
     # the object item is defined in Sec. prepare-predictions-and-groundtruth
     return object_item['box'][:, 4] # 4th number indicates vehicle length
 ```
-### 2. define breakdown value
+### 2. Define breakdown value
 If you want to add category and size as breakdowns in COCO:
 ```
 def get_object_type(object_item):
