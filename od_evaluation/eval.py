@@ -595,8 +595,8 @@ class Evaluator(object):
     
     def _prepare(self):
         # add breakdown, assign bbox/gt ID.
-        pds_dict = self.read_prediction(self.pd_path, self.debug)
-        gts_dict = self.read_groundtruth(self.gt_path, self.debug, gt=True)
+        pds_dict = self.read_prediction(self.pd_path)
+        gts_dict = self.read_groundtruth(self.gt_path)
         pds_list, gts_list = self.align_samples(pds_dict, gts_dict)
         num_samples = len(pds_list)
         assert num_samples == len(gts_list)
