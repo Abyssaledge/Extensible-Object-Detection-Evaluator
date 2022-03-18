@@ -2,11 +2,36 @@ from abc import ABC, abstractmethod
 import numpy as np
 from ipdb import set_trace
 
-def waymo_range_breakdown(o):
+def waymo_range_breakdown(gt, pd, mode, params=None):
+    assert mode in ('gt', 'pd')
+    o = gt if mode == 'gt' else pd
     return np.linalg.norm(o['box'][:, :3], ord=2, axis=1)
 
-def waymo_length_breakdown(o):
+def waymo_length_breakdown(gt, pd, mode, params=None):
+    assert mode in ('gt', 'pd')
+    o = gt if mode == 'gt' else pd
     return o['box'][:, 4]
+
+def waymo_crowd_breakdown(gt, pd, mode, params=None):
+    assert mode in ('gt', 'pd')
+
+    if mode == 'gt':
+        xyz = gt['box'][:, :2]
+        dist = np.linalg.norm(xyz[:, None, :] - xyz[None, :, :], axis=2, ord=2)
+        is_close = dist < params.crowd_distance
+        is_close = is_close.sum(1)
+        is_crowd = is_close >= 2
+    else:
+        if gt is None:
+            is_crowd = np.zeros(len(pd['box']), dtype=bool)
+        else:
+            gt_xyz = gt['box'][:, :2]
+            pd_xyz = pd['box'][:, :2]
+            dist = np.linalg.norm(pd_xyz[:, None, :] - gt_xyz[None, :, :], axis=2, ord=2)
+            is_close = dist < params.crowd_distance
+            is_close = is_close.sum(1)
+            is_crowd = is_close >= 2
+    return is_crowd
 
 class BaseParam(ABC):
     def __init__(self, pd_path, gt_path, interval=1, update_sep=None, update_insep=None):
@@ -70,6 +95,14 @@ class WaymoLengthParam(WaymoBaseParam):
         super().__init__(pd_path, gt_path, interval, update_sep, update_insep)
         self.inseparable_breakdowns['length'] = length_range
         self.breakdown_func_dict['length'] = waymo_length_breakdown
+
+class WaymoCrowdParam(WaymoBaseParam):
+
+    def __init__(self, pd_path, gt_path, dist=1.0, interval=1, update_sep=None, update_insep=None):
+        super().__init__(pd_path, gt_path, interval, update_sep, update_insep)
+        self.separable_breakdowns['crowd'] = [None, True, False]
+        self.breakdown_func_dict['crowd'] = waymo_crowd_breakdown
+        self.crowd_distance = dist
 
 
 

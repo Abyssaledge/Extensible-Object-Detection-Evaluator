@@ -14,10 +14,11 @@ if __name__ == '__main__':
     pd_path = args.pd_path
     gt_path = args.gt_path 
 
-    from od_evaluation.params import WaymoLengthParam
-    update_sep = {'type':['Vehicle', 'Pedestrian']}
+    from od_evaluation.params import WaymoLengthParam, WaymoCrowdParam
+    update_sep = {'type':['Pedestrian']}
 
     params = WaymoLengthParam(pd_path, gt_path, [None, [0, 4], [4, 8], [8, 20]], interval=args.interval, update_sep=update_sep)
+    # params = WaymoCrowdParam(pd_path, gt_path, 2, interval=args.interval, update_sep=update_sep)
     params.save_suffix = args.save_suffix
 
     evaluator = Evaluator(params, debug=False)

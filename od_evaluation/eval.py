@@ -629,9 +629,9 @@ class Evaluator(object):
 
             for bkd_name, bkd_func in self.func_bkd.items():
                 if num_pd > 0:
-                    pd[bkd_name] = bkd_func(pd)
+                    pd[bkd_name] = bkd_func(pd=pd, gt=gt, mode='pd', params=self.params)
                 if num_gt > 0:
-                    gt[bkd_name] = bkd_func(gt)
+                    gt[bkd_name] = bkd_func(pd=pd, gt=gt, mode='gt', params=self.params)
 
         self.pds_list = pds_list
         self.gts_list = gts_list
