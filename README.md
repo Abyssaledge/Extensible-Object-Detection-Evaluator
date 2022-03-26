@@ -57,7 +57,7 @@ def customized_iou_calculator(box1, box2):
 
 
 ---
-## Customize breakdowns if you like
+## Customize breakdowns
 To correctly use customized breakdowns, here we define two kinds of breakdowns: `separable breakdowns` and `inseparable breakdowns`.
 
 `Separable breakdowns` indicate those can be used to partition prediction set and groundtruth set before the matching process. For example, `object category` is a typical separable breakdown. We usually first partition the predictions and groundtruth and only pass the predictions and groundtruth in the same category to the evaluator.
@@ -66,14 +66,14 @@ To correctly use customized breakdowns, here we define two kinds of breakdowns: 
 
 Follow the following step to add the breakdowns you need:
 
-### 1. Define breakdown function
+### 1. Define breakdown functions
 For example, if you want to evaluate conditioned on vehicle length in Waymo:
 ```
 def waymo_length_breakdown(object_item):
     # the object item is defined in Sec. prepare-predictions-and-groundtruth
     return object_item['box'][:, 4] # 4th number indicates vehicle length
 ```
-### 2. Define breakdown value
+### 2. Define breakdown values
 If you want to add category and size as breakdowns in COCO:
 ```
 def get_object_type(object_item):
@@ -116,7 +116,7 @@ class WaymoBaseParam(BaseParam):
         self.read_groundtruth_func = read_waymo_object
 ```
 Note that you must implement `add_breakdowns`, `add_iou_function` and `add_input_function` after inherit `BaseParam`.
-### 2. Begin Evaluation
+### 2. Begin evaluation
 ```
 from od_evaluation.eval import Evaluator
 pd_path = xxx
