@@ -43,6 +43,8 @@ class Evaluator(object):
         self.num_all_choices = np.prod(self.num_choice_list)
 
         self.build_idx_breakdown_mapping()
+        self.valid_ts_set = set()
+        self.valid_ts_choice_set = set()
     
     def run(self):
 
@@ -55,16 +57,15 @@ class Evaluator(object):
         for sample_id in tqdm.tqdm(range(self.num_samples)):
             for i in range(self.num_all_choices):
                 selected_sep_bkd, selected_insep_bkd, choice_dict = self.idx_to_choice[i]
-                single_eval_result = self.evaluate_single_sample_given_breakdowns(selected_sep_bkd, selected_insep_bkd, sample_id)
+                single_eval_result = self.evaluate_single_sample_given_breakdowns(selected_sep_bkd, selected_insep_bkd, sample_id, i)
                 if single_eval_result is not None:
                     single_eval_result['choice_idx'] = i
                     single_eval_result['choice_dict'] = choice_dict
-                eval_list.append(single_eval_result)
+                    eval_list.append(single_eval_result)
         
         accumulated_result = self.accumulate(eval_list)
         summary = self.summarize_as_tree(accumulated_result)
         self.save(summary)
-        # print(summary)
 
     def accumulate(self, eval_result_list):
         '''
@@ -375,6 +376,10 @@ class Evaluator(object):
             if r is not None:
                 choice_idx = r['choice_idx']
                 results_dict[choice_idx].append(r)
+        # sort the list the results_dict by timestamp
+        for k, v in results_dict.items():
+            results_dict[k] = sorted(v, key=lambda x: x['timestamp'])
+
         assert len(results_dict) <= self.num_all_choices
         return results_dict
 
@@ -416,7 +421,7 @@ class Evaluator(object):
         assert len(loop_check_set) == self.num_all_choices
     
 
-    def evaluate_single_sample_given_breakdowns(self, sep_bd_dict, insep_bd_dict, sample_id):
+    def evaluate_single_sample_given_breakdowns(self, sep_bd_dict, insep_bd_dict, sample_id, choice_idx):
 
         gt_attrs = copy.deepcopy(self.gts_list[sample_id])
         pd_attrs = copy.deepcopy(self.pds_list[sample_id])
@@ -424,11 +429,18 @@ class Evaluator(object):
         if None in (gt_attrs, pd_attrs): # Is it right to ignore fps if there is no gts.
             return None
 
+        gt_timestamp = gt_attrs['timestamp']
+        pd_timestamp = pd_attrs['timestamp']
+        assert gt_timestamp == pd_timestamp
+
         # select valid gt & pd by seperable breakdowns
         pd_attrs, gt_attrs = self.split_by_sep_breakdowns(pd_attrs, gt_attrs, sep_bd_dict)
 
         if len(gt_attrs['type']) == 0 or len(pd_attrs['type']) == 0: # assume there is a 'type' breakdown
             return None
+        
+        self.valid_ts_set.add(gt_timestamp)
+        self.valid_ts_choice_set.add((gt_timestamp, choice_idx))
 
         # ignore some gt by the given inseparable breakdown
         gt_ignore = self.get_gt_ignore(gt_attrs, insep_bd_dict)
@@ -498,6 +510,7 @@ class Evaluator(object):
             pd_matched_gt=pd_matched_gts,
             pd_boxes=pd_attrs['box'],
             breakdowns={**sep_bd_dict, **insep_bd_dict},
+            timestamp=pd_timestamp,
         )
 
         return results
@@ -641,17 +654,16 @@ class Evaluator(object):
         print(f'Got {total_gt_num} ground-truth objects')
     
     def align_samples(self, pds_dict, gts_dict):
-        pds_keys = set(pds_dict.keys())
         gts_keys = set(gts_dict.keys())
-        all_keys = pds_keys | gts_keys
-        all_keys = sorted(list(all_keys))
+        sorted_gts_keys = sorted(list(gts_keys))
         interval = self.params.sampling_interval
-        all_keys = [all_keys[i] for i in range(len(all_keys)) if i % interval == 0]
+        sub_gt_keys = [k for i, k in enumerate(sorted_gts_keys) if i % interval == 0]
+        all_keys = sub_gt_keys
         self.all_keys = all_keys
         pds_list, gts_list = [], []
         for k in all_keys:
             pds_list.append(pds_dict.get(k, None))
-            gts_list.append(gts_dict.get(k, None))
+            gts_list.append(gts_dict[k])
         return pds_list, gts_list
     
     def save(self, summary):

@@ -63,7 +63,9 @@ def get_waymo_object(file_path, debug=False, gt=False):
     
     new_dict = {}
 
-    for k in obj_dict:
+    sorted_keys = sorted(list(obj_dict.keys()))
+
+    for k in sorted_keys:
         sample = np.stack(obj_dict[k], axis=0)
         num_obj = len(sample)
         assert num_obj > 0
@@ -76,7 +78,8 @@ def get_waymo_object(file_path, debug=False, gt=False):
         new_dict[k] = dict(
             box=boxes,
             score=scores,
-            type=types
+            type=types,
+            timestamp=k,
         )
         
     return new_dict

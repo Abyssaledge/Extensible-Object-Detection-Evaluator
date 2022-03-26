@@ -17,20 +17,38 @@ def waymo_crowd_breakdown(gt, pd, mode, params=None):
 
     if mode == 'gt':
         xyz = gt['box'][:, :2]
-        dist = np.linalg.norm(xyz[:, None, :] - xyz[None, :, :], axis=2, ord=2)
-        is_close = dist < params.crowd_distance
-        is_close = is_close.sum(1)
-        is_crowd = is_close >= 2
+        types = np.unique(gt['type'])
+        is_crowd = np.zeros(len(xyz), dtype=np.bool)
+        for t in types:
+            this_mask = gt['type'] == t
+            this_xyz = xyz[this_mask, :]
+            dist = np.linalg.norm(this_xyz[:, None, :] - this_xyz[None, :, :], axis=2, ord=2)
+            is_close = dist < params.crowd_distance
+            is_close = is_close.sum(1)
+            this_is_crowd = is_close >= 2
+            is_crowd[this_mask] = this_is_crowd
     else:
         if gt is None:
             is_crowd = np.zeros(len(pd['box']), dtype=bool)
         else:
+            types = np.unique(np.concatenate([pd['type'], gt['type']]))
             gt_xyz = gt['box'][:, :2]
             pd_xyz = pd['box'][:, :2]
-            dist = np.linalg.norm(pd_xyz[:, None, :] - gt_xyz[None, :, :], axis=2, ord=2)
-            is_close = dist < params.crowd_distance
-            is_close = is_close.sum(1)
-            is_crowd = is_close >= 2
+            is_crowd = np.zeros(len(pd['box']), dtype=bool)
+            for t in types:
+                gt_mask = gt['type'] == t
+                pd_mask = pd['type'] == t
+                if not pd_mask.any():
+                    continue
+                if not gt_mask.any():
+                    is_crowd[pd_mask] = False
+                    continue
+                this_pd_xyz = pd_xyz[pd_mask]
+                this_gt_xyz = gt_xyz[gt_mask]
+                dist = np.linalg.norm(this_pd_xyz[:, None, :] - this_gt_xyz[None, :, :], axis=2, ord=2)
+                is_close = dist < params.crowd_distance
+                is_close = is_close.sum(1)
+                is_crowd[pd_mask] = is_close >= 2
     return is_crowd
 
 class BaseParam(ABC):
