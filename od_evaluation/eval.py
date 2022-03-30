@@ -5,6 +5,7 @@ import tqdm
 from collections import defaultdict
 import datetime
 from ipdb import set_trace
+from treelib import Tree
 
 import os
 from os import path as osp
@@ -255,7 +256,6 @@ class Evaluator(object):
         print('Summarizing ...')
         p = self.params
         metric_set = ['Precision', 'Recall', 'TP_IoU', 'TP_Error']
-        from treelib import Tree
         summary = Tree()
         summary.create_node('Results', 'root')
         summary.create_node('Precision', 'Precision', parent='root')
