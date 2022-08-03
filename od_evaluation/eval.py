@@ -9,6 +9,7 @@ from treelib import Tree
 
 import os
 from os import path as osp
+import pickle as pkl
 
 
 class Evaluator(object):
@@ -66,7 +67,8 @@ class Evaluator(object):
         
         accumulated_result = self.accumulate(eval_list)
         summary = self.summarize_as_tree(accumulated_result)
-        self.save(summary)
+        curves = self.summarize_curve(accumulated_result)
+        self.save(summary, curves)
 
     def accumulate(self, eval_result_list):
         '''
@@ -81,6 +83,7 @@ class Evaluator(object):
         breakdown_dims = self.num_choice_list # number of choice per breakdown, e.g., 3 choices of size breakdown: 'small', 'mid', 'large'
 
         precision   = -np.ones([T, R] + breakdown_dims) # -1 for the precision of absent categories
+        fppi        = -np.ones([T, R] + breakdown_dims) # -1 for the precision of absent categories
         recall      = -np.ones([T,]   + breakdown_dims)
         scores      = -np.ones([T, R] + breakdown_dims)
 
@@ -172,9 +175,11 @@ class Evaluator(object):
                     if pi < len(pr):
                         precision[indices] = pr[pi]
                         scores[indices] = dtScoresSorted[pi]
+                        fppi[indices] = fp[pi] / num_images
                     else:
                         precision[indices] = 0
                         scores[indices] = 0
+                        fppi[indices] = 0
 
         accumulated_result = {
             'params': p,
@@ -185,6 +190,7 @@ class Evaluator(object):
             'scores': scores,
             'box_ious': box_ious,
             'box_errors': box_errors,
+            'fppi': fppi,
         }
         return accumulated_result
 
@@ -251,6 +257,45 @@ class Evaluator(object):
                 _summarize(i, iou_thr, ap=1)
 
         return summary
+    
+    def summarize_curve(self, accumulated_result):
+        summary_dict = {}
+        p = self.params
+        def _summarize(choice_idx, metric, iouThr=None):
+            _, _, choice =  self.idx_to_choice[choice_idx]
+            choice_list = [choice[k] for k in self.breakdown_name_list] # for index
+
+            if metric == 'fppi':
+                s = accumulated_result['fppi']
+                # IoU
+                if iouThr is None:
+                    return
+                t = p.iouThrs.index(iouThr)
+                s = s[t, ...]
+                num_bkd = len(choice_list)
+                for i in choice_list:
+                    s = s[:, i]
+                assert s.ndim == 1 # only left dimensions of iouThrs and recall
+            else:
+                raise NotImplementedError
+
+            
+            # similar to DFS
+            key = f'IoU@{iouThr}'
+            for i, name in enumerate(self.breakdown_name_list):
+                value = str(self.all_breakdown_dict[name][choice[name]])
+                this_key = f'{name}_{value}'
+                if 'None' in this_key:
+                    this_key = this_key.replace('None', 'OVERALL')
+                key = f'{key}/{this_key}'
+
+            summary_dict[key] = s
+
+        for iou_thr in p.iouThrs:
+            for i in range(self.num_all_choices):
+                _summarize(i, 'fppi', iou_thr)
+
+        return summary_dict
 
     def summarize_as_tree(self, accumulated_result):
         print('Summarizing ...')
@@ -666,7 +711,7 @@ class Evaluator(object):
             gts_list.append(gts_dict[k])
         return pds_list, gts_list
     
-    def save(self, summary):
+    def save(self, summary, raw_result):
 
 
         if hasattr(self.params, 'save_folder'):
@@ -686,6 +731,10 @@ class Evaluator(object):
         file_name = f'{date}{suffix}.txt'
         save_path = osp.join(save_folder, file_name)
         summary.save2file(save_path)
+
+        pkl_path = save_path.replace('.txt', '.pkl')
+        with open(pkl_path, 'wb') as fw:
+            pkl.dump(raw_result, fw)
 
         print(f'Evaluation result saved to {save_path}')
 
